@@ -341,14 +341,35 @@
             els.charStats.textContent = c.desc;
         }
 
-        function confirmCharacter() {
-            const c = CLASSES.find(x => x.id === selectedClassId);
-            currentUser.gameColor = c.color;
-            currentUser.gameName = c.name;
-            currentUser.gameClassId = c.id;
+        async function confirmCharacter() {
+            const btn = document.getElementById('btn-confirm-char');
+            if(btn.disabled) return; 
 
-            if (pendingAction === 'create') createRoom();
-            else if (pendingAction === 'join') switchView('join');
+            // VISUAL FEEDBACK: Dim button
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = "...";
+            btn.style.opacity = "0.5";
+
+            try {
+                const c = CLASSES.find(x => x.id === selectedClassId);
+                currentUser.gameColor = c.color;
+                currentUser.gameName = c.name;
+                currentUser.gameClassId = c.id;
+
+                if (pendingAction === 'create') {
+                    await createRoom();
+                } else if (pendingAction === 'join') {
+                    switchView('join');
+                }
+            } catch (e) {
+                showError("Action Failed: " + e.message);
+            } finally {
+                // Restore button
+                btn.disabled = false;
+                btn.textContent = originalText;
+                btn.style.opacity = "1";
+            }
         }
 
         // --- ROOM LOGIC ---
@@ -357,41 +378,54 @@
             let code = "";
             for(let i=0; i<4; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
 
-            const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', code);
-            await setDoc(roomRef, {
-                hostId: currentUser.uid,
-                status: 'waiting',
-                players: [{ 
-                    uid: currentUser.uid, 
-                    name: currentUser.gameName, 
-                    color: currentUser.gameColor,
-                    classId: currentUser.gameClassId
-                }]
-            });
-            currentRoomId = code;
-            subscribeToRoom(code);
-        }
+            try {
+                if (!db) throw new Error("Database not initialized. Check your keys!");
 
-        async function joinRoom(code) {
-            code = code.toUpperCase();
-            const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', code);
-            const snap = await getDoc(roomRef);
-            if (!snap.exists()) return showError("Room not found");
-            
-            const data = snap.data();
-            if (!data.players.some(p => p.uid === currentUser.uid)) {
-                if (data.status !== 'waiting') return showError("Game in progress");
-                await updateDoc(roomRef, {
-                    players: arrayUnion({ 
+                const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', code);
+                await setDoc(roomRef, {
+                    hostId: currentUser.uid,
+                    status: 'waiting',
+                    players: [{ 
                         uid: currentUser.uid, 
                         name: currentUser.gameName, 
                         color: currentUser.gameColor,
                         classId: currentUser.gameClassId
-                    })
+                    }]
                 });
+                currentRoomId = code;
+                subscribeToRoom(code);
+            } catch (e) {
+                console.error("Create Room Error:", e);
+                throw e; // Re-throw so confirmCharacter handles UI reset
             }
-            currentRoomId = code;
-            subscribeToRoom(code);
+        }
+
+        async function joinRoom(code) {
+            code = code.toUpperCase();
+            try {
+                if (!db) throw new Error("Database not initialized.");
+
+                const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', code);
+                const snap = await getDoc(roomRef);
+                if (!snap.exists()) throw new Error("Room not found");
+                
+                const data = snap.data();
+                if (!data.players.some(p => p.uid === currentUser.uid)) {
+                    if (data.status !== 'waiting') throw new Error("Game in progress");
+                    await updateDoc(roomRef, {
+                        players: arrayUnion({ 
+                            uid: currentUser.uid, 
+                            name: currentUser.gameName, 
+                            color: currentUser.gameColor,
+                            classId: currentUser.gameClassId
+                        })
+                    });
+                }
+                currentRoomId = code;
+                subscribeToRoom(code);
+            } catch (e) {
+                showError("Join Failed: " + e.message);
+            }
         }
 
         function subscribeToRoom(code) {
