@@ -205,7 +205,7 @@
                 appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
             } else {
                 // 2. GITHUB PAGES / MANUAL MODE
-                // YOUR SPECIFIC CONFIGURATION IS HERE NOW:
+                // This is your actual configuration for GitHub Pages
                 firebaseConfig = {
                     apiKey: "AIzaSyACe77kxd6QQ2A_0vgVoukbbbJrG7rtR5E",
                     authDomain: "roguelike-9afcc.firebaseapp.com",
@@ -216,6 +216,7 @@
                     measurementId: "G-N2JN640NKH"
                 };
                 
+                // We use a fixed ID for lobbies when running on your site
                 appId = 'dungeon-game-v1'; 
             }
 
@@ -277,7 +278,14 @@
                     await signInAnonymously(auth);
                 }
             } catch (e) { 
-                showError("Auth Failed: " + e.message + " (Check Firebase Console -> Auth -> Sign-in Method -> Anonymous enabled?)"); 
+                let msg = e.message;
+                // Specific error messages to help you debug Firebase Settings
+                if (msg.includes("auth/operation-not-allowed")) {
+                    msg = "GO TO FIREBASE CONSOLE -> AUTHENTICATION -> SIGN-IN METHOD -> ENABLE ANONYMOUS";
+                } else if (msg.includes("auth/unauthorized-domain")) {
+                    msg = "GO TO FIREBASE CONSOLE -> AUTHENTICATION -> SETTINGS -> ADD DOMAIN (github.io)";
+                }
+                showError(msg); 
             }
         };
 
