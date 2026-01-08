@@ -34,6 +34,7 @@
             border: none;
             cursor: pointer;
             box-shadow: inset -4px -4px 0px 0px rgba(0,0,0,0.5), inset 4px 4px 0px 0px rgba(255,255,255,0.2);
+            transition: all 0.1s;
         }
         
         .btn-pixel:active {
@@ -44,6 +45,18 @@
         .btn-pixel.primary { background: #3b82f6; }
         .btn-pixel.secondary { background: #10b981; }
         .btn-pixel.danger { background: #ef4444; }
+
+        .char-card {
+            border: 4px solid #333;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .char-card:hover { transform: scale(1.05); }
+        .char-card.selected {
+            border-color: #fbbf24; /* Amber-400 */
+            background: #333;
+            box-shadow: 0 0 15px rgba(251, 191, 36, 0.3);
+        }
 
         canvas {
             image-rendering: pixelated; /* Sharp pixels */
@@ -87,6 +100,27 @@
                 <div class="flex flex-col gap-4">
                     <button id="btn-create-menu" class="btn-pixel primary">Create Party</button>
                     <button id="btn-join-menu" class="btn-pixel secondary">Join Party</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW: CHARACTER SELECT -->
+        <div id="view-character-select" class="hidden w-full flex justify-center">
+            <div class="pixel-border p-6 bg-gray-800 w-full max-w-md">
+                <h2 class="text-center mb-6 text-yellow-400 text-sm">CHOOSE YOUR HERO</h2>
+                
+                <div id="char-grid" class="grid grid-cols-2 gap-4 mb-6">
+                    <!-- Injected by JS -->
+                </div>
+
+                <div class="text-center mb-6 h-12">
+                    <p id="char-desc-name" class="text-yellow-400 text-xs mb-1">Select a Class</p>
+                    <p id="char-desc-stats" class="text-gray-400 text-[10px]">...</p>
+                </div>
+
+                <div class="flex gap-4">
+                    <button id="btn-back-char" class="btn-pixel w-1/2 text-xs">Back</button>
+                    <button id="btn-confirm-char" class="btn-pixel secondary w-1/2 text-xs">Confirm</button>
                 </div>
             </div>
         </div>
@@ -177,21 +211,27 @@
         let currentRoomId = null;
         let roomUnsubscribe = null;
         let gameLoopId = null;
+        let pendingAction = null; // 'create' or 'join'
+        let selectedClassId = 'knight'; // Default
         
-        // Game State
-        let localGrid = []; // 2D array [y][x]
-        let playersMap = {}; // { uid: { x, y, color, name } }
-        const TILE_SIZE = 20; // Size for logic (not pixels)
+        // Game Data
+        const CLASSES = [
+            { id: 'knight', name: 'Knight', color: '#ef4444', desc: 'High Defense, Short Range' },
+            { id: 'rogue', name: 'Rogue', color: '#10b981', desc: 'High Speed, Critical Hits' },
+            { id: 'wizard', name: 'Wizard', color: '#3b82f6', desc: 'Low Health, Long Range' },
+            { id: 'cleric', name: 'Cleric', color: '#f59e0b', desc: 'Healer, Party Buffs' }
+        ];
+
+        let localGrid = []; 
+        let playersMap = {}; 
         const GRID_W = 15;
         const GRID_H = 15;
-        
-        const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'];
-        const NAMES = ["Rogue", "Knight", "Wizard", "Cleric", "Bard"];
 
         // --- DOM ---
         const views = {
             loading: document.getElementById('view-loading'),
             menu: document.getElementById('view-menu'),
+            charSelect: document.getElementById('view-character-select'),
             join: document.getElementById('view-join-input'),
             lobby: document.getElementById('view-lobby'),
             game: document.getElementById('view-game')
@@ -199,7 +239,10 @@
         const els = {
             error: document.getElementById('error-display'),
             canvas: document.getElementById('game-canvas'),
-            gameLoading: document.getElementById('game-loading')
+            gameLoading: document.getElementById('game-loading'),
+            charGrid: document.getElementById('char-grid'),
+            charName: document.getElementById('char-desc-name'),
+            charStats: document.getElementById('char-desc-stats')
         };
         const ctx = els.canvas.getContext('2d');
 
@@ -217,27 +260,18 @@
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 currentUser = user;
-                // Assign a color and name deterministicly based on UID char code
-                const colorIdx = user.uid.charCodeAt(0) % COLORS.length;
-                const nameIdx = user.uid.charCodeAt(0) % NAMES.length;
-                currentUser.gameColor = COLORS[colorIdx];
-                currentUser.gameName = NAMES[nameIdx];
-                
-                document.getElementById('user-display').textContent = `ID: ${currentUser.gameName} ${user.uid.substr(0,4)}`;
+                document.getElementById('user-display').textContent = `ID: ${user.uid.substr(0,4)}`;
+                renderCharSelect(); // Prep the grid
                 switchView('menu');
             }
         });
 
-        // --- LOBBY LOGIC ---
+        // --- UI & NAVIGATION ---
         function switchView(name) {
             Object.values(views).forEach(el => el.classList.add('hidden'));
             views[name].classList.remove('hidden');
             els.error.classList.add('hidden');
-            
-            // Resize canvas if game
-            if (name === 'game') {
-                resizeCanvas();
-            }
+            if (name === 'game') resizeCanvas();
         }
 
         function showError(msg) {
@@ -246,6 +280,49 @@
             setTimeout(() => els.error.classList.add('hidden'), 3000);
         }
 
+        // --- CHARACTER SELECT ---
+        function renderCharSelect() {
+            els.charGrid.innerHTML = '';
+            CLASSES.forEach(c => {
+                const el = document.createElement('div');
+                el.className = `char-card p-3 flex flex-col items-center bg-gray-900 ${c.id === selectedClassId ? 'selected' : ''}`;
+                el.onclick = () => selectClass(c.id);
+                
+                el.innerHTML = `
+                    <div class="w-8 h-8 mb-2 border-2 border-white" style="background-color: ${c.color}"></div>
+                    <span class="text-[10px] text-gray-300 uppercase">${c.name}</span>
+                `;
+                els.charGrid.appendChild(el);
+            });
+            updateCharDesc();
+        }
+
+        function selectClass(id) {
+            selectedClassId = id;
+            renderCharSelect();
+        }
+
+        function updateCharDesc() {
+            const c = CLASSES.find(x => x.id === selectedClassId);
+            els.charName.textContent = c.name;
+            els.charStats.textContent = c.desc;
+        }
+
+        function confirmCharacter() {
+            // Save selection to currentUser object for easy access
+            const c = CLASSES.find(x => x.id === selectedClassId);
+            currentUser.gameColor = c.color;
+            currentUser.gameName = c.name;
+            currentUser.gameClassId = c.id;
+
+            if (pendingAction === 'create') {
+                createRoom();
+            } else if (pendingAction === 'join') {
+                switchView('join');
+            }
+        }
+
+        // --- NETWORKING ---
         async function createRoom() {
             const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
             let code = "";
@@ -255,7 +332,12 @@
             await setDoc(roomRef, {
                 hostId: currentUser.uid,
                 status: 'waiting',
-                players: [{ uid: currentUser.uid, name: currentUser.gameName, color: currentUser.gameColor }]
+                players: [{ 
+                    uid: currentUser.uid, 
+                    name: currentUser.gameName, 
+                    color: currentUser.gameColor,
+                    classId: currentUser.gameClassId
+                }]
             });
             currentRoomId = code;
             subscribeToRoom(code);
@@ -271,7 +353,12 @@
             if (!data.players.some(p => p.uid === currentUser.uid)) {
                 if (data.status !== 'waiting') return showError("Game in progress");
                 await updateDoc(roomRef, {
-                    players: arrayUnion({ uid: currentUser.uid, name: currentUser.gameName, color: currentUser.gameColor })
+                    players: arrayUnion({ 
+                        uid: currentUser.uid, 
+                        name: currentUser.gameName, 
+                        color: currentUser.gameColor,
+                        classId: currentUser.gameClassId
+                    })
                 });
             }
             currentRoomId = code;
@@ -291,7 +378,13 @@
                 data.players.forEach(p => {
                     const el = document.createElement('div');
                     el.className = "flex items-center gap-2 p-2 bg-gray-900 border border-gray-700";
-                    el.innerHTML = `<div class="w-4 h-4" style="background:${p.color}"></div><span>${p.name}</span>`;
+                    el.innerHTML = `
+                        <div class="w-4 h-4 border border-white" style="background:${p.color}"></div>
+                        <div class="flex flex-col">
+                            <span class="text-xs text-white">${p.name}</span>
+                            <span class="text-[8px] text-gray-500">${p.uid.substr(0,4)}</span>
+                        </div>
+                    `;
                     list.appendChild(el);
                 });
 
@@ -304,18 +397,12 @@
                     document.getElementById('guest-controls').classList.remove('hidden');
                 }
 
-                // Game Start Transition
                 if (data.status === 'playing') {
                     if (data.map) {
                         localGrid = JSON.parse(data.map);
                         playersMap = data.playerStates || {};
-                        
-                        // First time entering game?
-                        if (views.game.classList.contains('hidden')) {
-                            enterGameMode();
-                        }
+                        if (views.game.classList.contains('hidden')) enterGameMode();
                     } else {
-                        // Status is playing but map not ready yet (rare race condition)
                         views.game.classList.contains('hidden') ? switchView('game') : null;
                         els.gameLoading.classList.remove('hidden');
                     }
@@ -330,7 +417,6 @@
             for(let y=0; y<GRID_H; y++) {
                 let row = [];
                 for(let x=0; x<GRID_W; x++) {
-                    // Simple logic: Border walls, random pillars
                     if (y===0 || y===GRID_H-1 || x===0 || x===GRID_W-1) row.push(1);
                     else if (Math.random() < 0.1) row.push(1);
                     else row.push(0);
@@ -338,19 +424,18 @@
                 map.push(row);
             }
 
-            // Initial Player States
             const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', currentRoomId);
             const snap = await getDoc(roomRef);
             const players = snap.data().players;
             
             let initialStates = {};
             players.forEach((p, index) => {
-                // Spawn players in a line at top left
                 initialStates[p.uid] = {
                     x: 2 + index,
                     y: 2,
                     color: p.color,
-                    name: p.name
+                    name: p.name,
+                    classId: p.classId
                 };
             });
 
@@ -365,59 +450,42 @@
             switchView('game');
             els.gameLoading.classList.add('hidden');
             resizeCanvas();
-            // Start render loop
             if (!gameLoopId) loop();
         }
 
         // --- GAMEPLAY LOGIC ---
-
         function resizeCanvas() {
-            // Make internal resolution match the grid size times a pixel factor
-            // We want big chunky pixels.
-            const scale = 20; // Each tile is 20x20 pixels on the canvas
+            const scale = 20; 
             els.canvas.width = GRID_W * scale;
             els.canvas.height = GRID_H * scale;
         }
 
         async function movePlayer(dx, dy) {
             if (!currentRoomId || !localGrid.length) return;
-            
             const myState = playersMap[currentUser.uid];
             if (!myState) return;
 
             const targetX = myState.x + dx;
             const targetY = myState.y + dy;
 
-            // Collision Check (Walls)
             if (localGrid[targetY] && localGrid[targetY][targetX] === 1) return; // Hit wall
 
-            // Optimistic Update (Move locally immediately)
             myState.x = targetX;
             myState.y = targetY;
             
-            // Sync to Firestore
             const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', currentRoomId);
-            // Use dot notation to update just this player's position
             const updateField = `playerStates.${currentUser.uid}`;
             
             try {
-                await updateDoc(roomRef, {
-                    [updateField]: myState
-                });
-            } catch (e) {
-                console.error("Move sync failed", e);
-                // Revert on failure would go here
-            }
+                await updateDoc(roomRef, { [updateField]: myState });
+            } catch (e) { console.error("Move sync failed", e); }
         }
 
-        // --- RENDER LOOP ---
         function draw() {
-            // Fill Background
             ctx.fillStyle = '#111';
             ctx.fillRect(0, 0, els.canvas.width, els.canvas.height);
 
             if (!localGrid.length) return;
-
             const tileW = els.canvas.width / GRID_W;
             const tileH = els.canvas.height / GRID_H;
 
@@ -425,13 +493,11 @@
             for(let y=0; y<GRID_H; y++) {
                 for(let x=0; x<GRID_W; x++) {
                     if (localGrid[y][x] === 1) {
-                        ctx.fillStyle = '#444'; // Wall
+                        ctx.fillStyle = '#444'; 
                         ctx.fillRect(x*tileW, y*tileH, tileW, tileH);
-                        // Bevel effect
                         ctx.fillStyle = '#555';
                         ctx.fillRect(x*tileW, y*tileH, tileW, 4);
                     } else {
-                        // Floor dots
                         ctx.fillStyle = '#222';
                         ctx.beginPath();
                         ctx.arc(x*tileW + tileW/2, y*tileH + tileH/2, 2, 0, Math.PI*2);
@@ -443,19 +509,20 @@
             // Draw Players
             Object.values(playersMap).forEach(p => {
                 ctx.fillStyle = p.color;
-                // Simple square body
                 ctx.fillRect(p.x*tileW + 2, p.y*tileH + 2, tileW - 4, tileH - 4);
                 
-                // Eyes (to show direction? just simple for now)
                 ctx.fillStyle = 'white';
                 ctx.fillRect(p.x*tileW + 5, p.y*tileH + 5, 4, 4);
                 ctx.fillRect(p.x*tileW + 12, p.y*tileH + 5, 4, 4);
                 
-                // Name tag
+                // Tiny Class Icon on head (Simple shapes)
+                ctx.fillStyle = 'white';
+                if(p.classId === 'wizard') ctx.fillRect(p.x*tileW + tileW/2 - 2, p.y*tileH - 4, 4, 4); // Hat tip
+                
                 ctx.fillStyle = 'white';
                 ctx.font = '8px monospace';
                 ctx.textAlign = 'center';
-                ctx.fillText(p.name, p.x*tileW + tileW/2, p.y*tileH - 2);
+                ctx.fillText(p.name.substr(0,1), p.x*tileW + tileW/2, p.y*tileH + tileH - 4);
             });
         }
 
@@ -464,7 +531,7 @@
             gameLoopId = requestAnimationFrame(loop);
         }
 
-        // --- CONTROLS ---
+        // --- EVENTS ---
         window.addEventListener('keydown', (e) => {
             if (views.game.classList.contains('hidden')) return;
             switch(e.key) {
@@ -475,7 +542,6 @@
             }
         });
 
-        // Touch Controls
         const btnUp = document.getElementById('btn-up');
         const btnDown = document.getElementById('btn-down');
         const btnLeft = document.getElementById('btn-left');
@@ -490,9 +556,18 @@
         addTouch(btnLeft, -1, 0);
         addTouch(btnRight, 1, 0);
 
-        // General UI Bindings
-        document.getElementById('btn-create-menu').onclick = createRoom;
-        document.getElementById('btn-join-menu').onclick = () => switchView('join');
+        // Buttons
+        document.getElementById('btn-create-menu').onclick = () => {
+            pendingAction = 'create';
+            switchView('charSelect');
+        };
+        document.getElementById('btn-join-menu').onclick = () => {
+            pendingAction = 'join';
+            switchView('charSelect');
+        };
+        document.getElementById('btn-back-char').onclick = () => switchView('menu');
+        document.getElementById('btn-confirm-char').onclick = confirmCharacter;
+        
         document.getElementById('btn-back-join').onclick = () => switchView('menu');
         document.getElementById('btn-confirm-join').onclick = () => joinRoom(document.getElementById('input-room-code').value);
         document.getElementById('btn-start-game').onclick = triggerStart;
