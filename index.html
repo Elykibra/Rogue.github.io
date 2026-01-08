@@ -12,15 +12,25 @@
             font-family: 'Press Start 2P', cursive;
             background-color: #1a1a1a;
             color: #e5e5e5;
-            touch-action: none; /* Prevent scroll on mobile tap */
+            touch-action: none;
         }
 
+        /* Scanline effect for retro feel */
+        .scanline {
+            width: 100%;
+            height: 100px;
+            z-index: 10;
+            background: linear-gradient(0deg, rgba(0,0,0,0) 0%, rgba(255, 255, 255, 0.2) 50%, rgba(0,0,0,0) 100%);
+            opacity: 0.1;
+            background-size: 100% 4px;
+            position: fixed;
+            pointer-events: none;
+            animation: scanline 10s linear infinite;
+        }
+        @keyframes scanline { 0% { top: -10%; } 100% { top: 110%; } }
+
         .pixel-border {
-            box-shadow: 
-                -4px 0 0 0 #e5e5e5,
-                4px 0 0 0 #e5e5e5,
-                0 -4px 0 0 #e5e5e5,
-                0 4px 0 0 #e5e5e5;
+            box-shadow: -4px 0 0 0 #e5e5e5, 4px 0 0 0 #e5e5e5, 0 -4px 0 0 #e5e5e5, 0 4px 0 0 #e5e5e5;
             margin: 4px;
         }
 
@@ -36,64 +46,47 @@
             box-shadow: inset -4px -4px 0px 0px rgba(0,0,0,0.5), inset 4px 4px 0px 0px rgba(255,255,255,0.2);
             transition: all 0.1s;
         }
-        
-        .btn-pixel:active {
-            transform: translateY(2px);
-            box-shadow: inset -2px -2px 0px 0px rgba(0,0,0,0.5), inset 2px 2px 0px 0px rgba(255,255,255,0.2);
-        }
-
+        .btn-pixel:active { transform: translateY(2px); box-shadow: inset -2px -2px 0px 0px rgba(0,0,0,0.5), inset 2px 2px 0px 0px rgba(255,255,255,0.2); }
         .btn-pixel.primary { background: #3b82f6; }
         .btn-pixel.secondary { background: #10b981; }
         .btn-pixel.danger { background: #ef4444; }
 
-        .char-card {
-            border: 4px solid #333;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
+        .char-card { border: 4px solid #333; cursor: pointer; transition: all 0.2s; }
         .char-card:hover { transform: scale(1.05); }
-        .char-card.selected {
-            border-color: #fbbf24; /* Amber-400 */
-            background: #333;
-            box-shadow: 0 0 15px rgba(251, 191, 36, 0.3);
-        }
+        .char-card.selected { border-color: #fbbf24; background: #333; box-shadow: 0 0 15px rgba(251, 191, 36, 0.3); }
 
-        canvas {
-            image-rendering: pixelated; /* Sharp pixels */
-            width: 100%;
-            height: 100%;
-        }
+        canvas { image-rendering: pixelated; width: 100%; height: 100%; }
 
         #dpad button {
-            width: 60px;
-            height: 60px;
+            width: 60px; height: 60px;
             background: rgba(255,255,255,0.1);
             border: 2px solid #555;
             border-radius: 8px;
-            color: white;
-            font-size: 20px;
+            color: white; font-size: 20px;
         }
         #dpad button:active { background: rgba(255,255,255,0.3); }
     </style>
 </head>
 <body class="h-screen w-screen overflow-hidden flex flex-col items-center justify-center p-4">
 
+    <div class="scanline"></div>
+
     <div id="app" class="relative z-20 w-full max-w-2xl h-full flex flex-col justify-center">
         
-        <!-- HEADER -->
         <div id="header" class="text-center mb-4 shrink-0">
             <h1 class="text-xl md:text-2xl text-yellow-400 mb-2 text-shadow">DUNGEON SYNC</h1>
         </div>
 
-        <!-- ERROR MESSAGE -->
-        <div id="error-display" class="hidden mb-4 p-2 bg-red-900/90 border-2 border-red-500 text-red-200 text-xs text-center fixed top-4 left-4 right-4 z-50"></div>
+        <!-- ERROR MESSAGE: Now visible by default if JS crashes -->
+        <div id="error-display" class="hidden mb-4 p-4 bg-red-900/90 border-2 border-red-500 text-red-200 text-xs text-center fixed top-10 left-4 right-4 z-50"></div>
 
-        <!-- VIEW: LOADING -->
+        <!-- LOADING -->
         <div id="view-loading" class="text-center">
-            <p class="animate-pulse text-blue-300">Connecting to Nethernet...</p>
+            <p class="animate-pulse text-blue-300 mb-4">Connecting to Nethernet...</p>
+            <p id="loading-hint" class="text-[10px] text-gray-500 hidden">Taking longer than usual...</p>
         </div>
 
-        <!-- VIEW: MAIN MENU -->
+        <!-- MAIN MENU -->
         <div id="view-menu" class="hidden flex flex-col gap-6 items-center">
             <div class="pixel-border p-8 bg-gray-800 text-center w-full max-w-md">
                 <p id="user-display" class="text-xs text-blue-300 mb-8 truncate"></p>
@@ -104,20 +97,15 @@
             </div>
         </div>
 
-        <!-- VIEW: CHARACTER SELECT -->
+        <!-- CHAR SELECT -->
         <div id="view-character-select" class="hidden w-full flex justify-center">
             <div class="pixel-border p-6 bg-gray-800 w-full max-w-md">
                 <h2 class="text-center mb-6 text-yellow-400 text-sm">CHOOSE YOUR HERO</h2>
-                
-                <div id="char-grid" class="grid grid-cols-2 gap-4 mb-6">
-                    <!-- Injected by JS -->
-                </div>
-
+                <div id="char-grid" class="grid grid-cols-2 gap-4 mb-6"></div>
                 <div class="text-center mb-6 h-12">
                     <p id="char-desc-name" class="text-yellow-400 text-xs mb-1">Select a Class</p>
                     <p id="char-desc-stats" class="text-gray-400 text-[10px]">...</p>
                 </div>
-
                 <div class="flex gap-4">
                     <button id="btn-back-char" class="btn-pixel w-1/2 text-xs">Back</button>
                     <button id="btn-confirm-char" class="btn-pixel secondary w-1/2 text-xs">Confirm</button>
@@ -125,7 +113,7 @@
             </div>
         </div>
 
-        <!-- VIEW: JOIN INPUT -->
+        <!-- JOIN INPUT -->
         <div id="view-join-input" class="hidden w-full flex justify-center">
             <div class="pixel-border p-6 bg-gray-800 w-full max-w-md">
                 <h2 class="text-center mb-6 text-yellow-400">Enter Room Code</h2>
@@ -138,7 +126,7 @@
             </div>
         </div>
 
-        <!-- VIEW: LOBBY -->
+        <!-- LOBBY -->
         <div id="view-lobby" class="hidden w-full flex justify-center">
             <div class="pixel-border p-6 bg-gray-800 w-full max-w-md">
                 <div class="flex justify-between items-center mb-6 border-b-2 border-gray-600 pb-4">
@@ -148,16 +136,13 @@
                     </div>
                     <div id="lobby-status" class="text-xs bg-green-900 text-green-300 px-2 py-1">WAITING</div>
                 </div>
-
                 <div class="mb-6">
                     <h3 class="text-xs text-blue-300 mb-4">PARTY MEMBERS</h3>
                     <div id="player-list" class="space-y-3"></div>
                 </div>
-
                 <div id="host-controls" class="hidden border-t-2 border-gray-600 pt-4 mt-4">
                     <button id="btn-start-game" class="btn-pixel secondary w-full mb-2">Enter Dungeon</button>
                 </div>
-
                 <div id="guest-controls" class="hidden border-t-2 border-gray-600 pt-4 mt-4">
                     <p class="text-xs text-center animate-pulse">Waiting for host...</p>
                 </div>
@@ -165,32 +150,23 @@
             </div>
         </div>
 
-        <!-- VIEW: GAME -->
+        <!-- GAME -->
         <div id="view-game" class="hidden flex-col h-full items-center">
             <div class="relative w-full max-w-md aspect-square bg-black pixel-border mb-2 overflow-hidden">
                 <canvas id="game-canvas" width="400" height="400"></canvas>
-                <!-- Loading overlay for guests waiting for map -->
                 <div id="game-loading" class="absolute inset-0 bg-black/80 flex items-center justify-center hidden">
                     <span class="text-yellow-400 animate-pulse">Syncing Map...</span>
                 </div>
             </div>
-            
             <div class="flex justify-between w-full max-w-md px-2 items-center">
                 <p class="text-[10px] text-gray-400">Arrows/WASD to move</p>
                 <button id="btn-exit-game" class="text-[10px] text-red-400 hover:text-red-200 uppercase">Exit Run</button>
             </div>
-
-            <!-- Mobile Controls -->
             <div id="dpad" class="mt-4 grid grid-cols-3 gap-2 md:hidden">
-                <div></div>
-                <button id="btn-up">▲</button>
-                <div></div>
-                <button id="btn-left">◀</button>
-                <button id="btn-down">▼</button>
-                <button id="btn-right">▶</button>
+                <div></div> <button id="btn-up">▲</button> <div></div>
+                <button id="btn-left">◀</button> <button id="btn-down">▼</button> <button id="btn-right">▶</button>
             </div>
         </div>
-
     </div>
 
     <!-- FIREBASE MODULES -->
@@ -199,22 +175,67 @@
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, arrayUnion, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- CONFIGURATION ---
-        const firebaseConfig = JSON.parse(__firebase_config);
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        // --- GLOBAL ERROR HANDLING ---
+        window.onerror = function(msg, url, line, col, error) {
+            const display = document.getElementById('error-display');
+            display.textContent = `SYSTEM ERROR: ${msg}`;
+            display.classList.remove('hidden');
+            return false;
+        };
+
+        const els = {
+            error: document.getElementById('error-display'),
+            loadingHint: document.getElementById('loading-hint'),
+            canvas: document.getElementById('game-canvas'),
+            gameLoading: document.getElementById('game-loading'),
+            charGrid: document.getElementById('char-grid'),
+            charName: document.getElementById('char-desc-name'),
+            charStats: document.getElementById('char-desc-stats')
+        };
+
+        // --- SAFE CONFIGURATION ---
+        let app, auth, db, appId;
+        
+        try {
+            let firebaseConfig;
+
+            if (typeof __firebase_config !== 'undefined') {
+                // 1. CHAT MODE (Automatic)
+                firebaseConfig = JSON.parse(__firebase_config);
+                appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            } else {
+                // 2. GITHUB PAGES / MANUAL MODE
+                // YOUR SPECIFIC CONFIGURATION IS HERE NOW:
+                firebaseConfig = {
+                    apiKey: "AIzaSyACe77kxd6QQ2A_0vgVoukbbbJrG7rtR5E",
+                    authDomain: "roguelike-9afcc.firebaseapp.com",
+                    projectId: "roguelike-9afcc",
+                    storageBucket: "roguelike-9afcc.firebasestorage.app",
+                    messagingSenderId: "532102583576",
+                    appId: "1:532102583576:web:e930a7cabaed5e46bb3a6d",
+                    measurementId: "G-N2JN640NKH"
+                };
+                
+                appId = 'dungeon-game-v1'; 
+            }
+
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+
+        } catch (e) {
+            els.error.textContent = "SETUP ERROR: " + e.message;
+            els.error.classList.remove('hidden');
+        }
 
         // --- STATE ---
         let currentUser = null;
         let currentRoomId = null;
         let roomUnsubscribe = null;
         let gameLoopId = null;
-        let pendingAction = null; // 'create' or 'join'
-        let selectedClassId = 'knight'; // Default
+        let pendingAction = null; 
+        let selectedClassId = 'knight'; 
         
-        // Game Data
         const CLASSES = [
             { id: 'knight', name: 'Knight', color: '#ef4444', desc: 'High Defense, Short Range' },
             { id: 'rogue', name: 'Rogue', color: '#10b981', desc: 'High Speed, Critical Hits' },
@@ -227,7 +248,7 @@
         const GRID_W = 15;
         const GRID_H = 15;
 
-        // --- DOM ---
+        // --- DOM ELEMENTS ---
         const views = {
             loading: document.getElementById('view-loading'),
             menu: document.getElementById('view-menu'),
@@ -236,37 +257,42 @@
             lobby: document.getElementById('view-lobby'),
             game: document.getElementById('view-game')
         };
-        const els = {
-            error: document.getElementById('error-display'),
-            canvas: document.getElementById('game-canvas'),
-            gameLoading: document.getElementById('game-loading'),
-            charGrid: document.getElementById('char-grid'),
-            charName: document.getElementById('char-desc-name'),
-            charStats: document.getElementById('char-desc-stats')
-        };
         const ctx = els.canvas.getContext('2d');
 
         // --- AUTH ---
         const initAuth = async () => {
+            if (!auth) return; // Stop if init failed
+            
+            // Show hint if loading takes too long
+            setTimeout(() => {
+                if (!currentUser && !els.error.textContent) els.loadingHint.classList.remove('hidden');
+            }, 3000);
+
             try {
+                // If we have a custom token (chat mode), use it
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                     await signInWithCustomToken(auth, __initial_auth_token);
                 } else {
+                    // Otherwise (GitHub mode), try anonymous login
                     await signInAnonymously(auth);
                 }
-            } catch (e) { showError(e.message); }
+            } catch (e) { 
+                showError("Auth Failed: " + e.message + " (Check Firebase Console -> Auth -> Sign-in Method -> Anonymous enabled?)"); 
+            }
         };
 
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                currentUser = user;
-                document.getElementById('user-display').textContent = `ID: ${user.uid.substr(0,4)}`;
-                renderCharSelect(); // Prep the grid
-                switchView('menu');
-            }
-        });
+        if (auth) {
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    currentUser = user;
+                    document.getElementById('user-display').textContent = `ID: ${user.uid.substr(0,4)}`;
+                    renderCharSelect();
+                    switchView('menu');
+                }
+            });
+        }
 
-        // --- UI & NAVIGATION ---
+        // --- HELPER FUNCTIONS ---
         function switchView(name) {
             Object.values(views).forEach(el => el.classList.add('hidden'));
             views[name].classList.remove('hidden');
@@ -277,17 +303,16 @@
         function showError(msg) {
             els.error.textContent = msg;
             els.error.classList.remove('hidden');
-            setTimeout(() => els.error.classList.add('hidden'), 3000);
         }
 
-        // --- CHARACTER SELECT ---
+        // --- CHARACTER SELECT LOGIC ---
         function renderCharSelect() {
+            if (!els.charGrid) return;
             els.charGrid.innerHTML = '';
             CLASSES.forEach(c => {
                 const el = document.createElement('div');
                 el.className = `char-card p-3 flex flex-col items-center bg-gray-900 ${c.id === selectedClassId ? 'selected' : ''}`;
                 el.onclick = () => selectClass(c.id);
-                
                 el.innerHTML = `
                     <div class="w-8 h-8 mb-2 border-2 border-white" style="background-color: ${c.color}"></div>
                     <span class="text-[10px] text-gray-300 uppercase">${c.name}</span>
@@ -309,20 +334,16 @@
         }
 
         function confirmCharacter() {
-            // Save selection to currentUser object for easy access
             const c = CLASSES.find(x => x.id === selectedClassId);
             currentUser.gameColor = c.color;
             currentUser.gameName = c.name;
             currentUser.gameClassId = c.id;
 
-            if (pendingAction === 'create') {
-                createRoom();
-            } else if (pendingAction === 'join') {
-                switchView('join');
-            }
+            if (pendingAction === 'create') createRoom();
+            else if (pendingAction === 'join') switchView('join');
         }
 
-        // --- NETWORKING ---
+        // --- ROOM LOGIC ---
         async function createRoom() {
             const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
             let code = "";
@@ -371,7 +392,6 @@
                 if (!doc.exists()) { leaveRoom(); return; }
                 const data = doc.data();
                 
-                // Lobby UI Update
                 document.getElementById('display-room-code').textContent = code;
                 const list = document.getElementById('player-list');
                 list.innerHTML = '';
@@ -388,7 +408,6 @@
                     list.appendChild(el);
                 });
 
-                // Host/Guest controls
                 if (data.hostId === currentUser.uid) {
                     document.getElementById('host-controls').classList.remove('hidden');
                     document.getElementById('guest-controls').classList.add('hidden');
@@ -403,16 +422,16 @@
                         playersMap = data.playerStates || {};
                         if (views.game.classList.contains('hidden')) enterGameMode();
                     } else {
-                        views.game.classList.contains('hidden') ? switchView('game') : null;
+                        if (views.game.classList.contains('hidden')) switchView('game');
                         els.gameLoading.classList.remove('hidden');
                     }
                 }
-            });
+            }, (err) => showError("Connection lost: " + err.message));
             switchView('lobby');
         }
 
+        // --- GAME START & LOOP ---
         async function triggerStart() {
-            // HOST LOGIC: Generate Map
             let map = [];
             for(let y=0; y<GRID_H; y++) {
                 let row = [];
@@ -431,11 +450,8 @@
             let initialStates = {};
             players.forEach((p, index) => {
                 initialStates[p.uid] = {
-                    x: 2 + index,
-                    y: 2,
-                    color: p.color,
-                    name: p.name,
-                    classId: p.classId
+                    x: 2 + index, y: 2,
+                    color: p.color, name: p.name, classId: p.classId
                 };
             });
 
@@ -453,7 +469,6 @@
             if (!gameLoopId) loop();
         }
 
-        // --- GAMEPLAY LOGIC ---
         function resizeCanvas() {
             const scale = 20; 
             els.canvas.width = GRID_W * scale;
@@ -468,7 +483,7 @@
             const targetX = myState.x + dx;
             const targetY = myState.y + dy;
 
-            if (localGrid[targetY] && localGrid[targetY][targetX] === 1) return; // Hit wall
+            if (localGrid[targetY] && localGrid[targetY][targetX] === 1) return;
 
             myState.x = targetX;
             myState.y = targetY;
@@ -489,7 +504,6 @@
             const tileW = els.canvas.width / GRID_W;
             const tileH = els.canvas.height / GRID_H;
 
-            // Draw Map
             for(let y=0; y<GRID_H; y++) {
                 for(let x=0; x<GRID_W; x++) {
                     if (localGrid[y][x] === 1) {
@@ -506,7 +520,6 @@
                 }
             }
 
-            // Draw Players
             Object.values(playersMap).forEach(p => {
                 ctx.fillStyle = p.color;
                 ctx.fillRect(p.x*tileW + 2, p.y*tileH + 2, tileW - 4, tileH - 4);
@@ -515,9 +528,8 @@
                 ctx.fillRect(p.x*tileW + 5, p.y*tileH + 5, 4, 4);
                 ctx.fillRect(p.x*tileW + 12, p.y*tileH + 5, 4, 4);
                 
-                // Tiny Class Icon on head (Simple shapes)
                 ctx.fillStyle = 'white';
-                if(p.classId === 'wizard') ctx.fillRect(p.x*tileW + tileW/2 - 2, p.y*tileH - 4, 4, 4); // Hat tip
+                if(p.classId === 'wizard') ctx.fillRect(p.x*tileW + tileW/2 - 2, p.y*tileH - 4, 4, 4);
                 
                 ctx.fillStyle = 'white';
                 ctx.font = '8px monospace';
@@ -548,32 +560,25 @@
         const btnRight = document.getElementById('btn-right');
         
         const addTouch = (el, dx, dy) => {
-            el.addEventListener('touchstart', (e) => { e.preventDefault(); movePlayer(dx, dy); });
-            el.addEventListener('mousedown', (e) => { e.preventDefault(); movePlayer(dx, dy); });
+            if(el) {
+                el.addEventListener('touchstart', (e) => { e.preventDefault(); movePlayer(dx, dy); });
+                el.addEventListener('mousedown', (e) => { e.preventDefault(); movePlayer(dx, dy); });
+            }
         };
         addTouch(btnUp, 0, -1);
         addTouch(btnDown, 0, 1);
         addTouch(btnLeft, -1, 0);
         addTouch(btnRight, 1, 0);
 
-        // Buttons
-        document.getElementById('btn-create-menu').onclick = () => {
-            pendingAction = 'create';
-            switchView('charSelect');
-        };
-        document.getElementById('btn-join-menu').onclick = () => {
-            pendingAction = 'join';
-            switchView('charSelect');
-        };
+        document.getElementById('btn-create-menu').onclick = () => { pendingAction = 'create'; switchView('charSelect'); };
+        document.getElementById('btn-join-menu').onclick = () => { pendingAction = 'join'; switchView('charSelect'); };
         document.getElementById('btn-back-char').onclick = () => switchView('menu');
         document.getElementById('btn-confirm-char').onclick = confirmCharacter;
-        
         document.getElementById('btn-back-join').onclick = () => switchView('menu');
         document.getElementById('btn-confirm-join').onclick = () => joinRoom(document.getElementById('input-room-code').value);
         document.getElementById('btn-start-game').onclick = triggerStart;
         document.getElementById('btn-leave-lobby').onclick = leaveRoom;
         document.getElementById('btn-exit-game').onclick = leaveRoom;
-
         document.getElementById('display-room-code').onclick = () => {
              const r = document.createRange(); r.selectNode(document.getElementById('display-room-code'));
              window.getSelection().removeAllRanges(); window.getSelection().addRange(r);
@@ -590,7 +595,6 @@
         }
 
         initAuth();
-
     </script>
 </body>
 </html>
